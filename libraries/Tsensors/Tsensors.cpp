@@ -296,7 +296,7 @@ void Tsensors::setReed(void (*InterruptService(void))){
 	ReedService = InterruptService;
 	attachInterrupt(digitalPinToInterrupt(reedPin), stableReed, LOW);
 }
-
+//???digitalPinTOINTERRUPT
 
 void Tsensors::readCoefficients(void)
 {
