@@ -267,6 +267,7 @@ void Send_Pload(uint8_t *sendData, const uint8_t len){
   Serial.println("");
   free(RecvMsg);
   flag = 0;
+  data = 0;//reset the counter so that it can send after another 10 mins
   // If want to get blocking downlink message, use the folling block instead
   /*
   recvMsg *RecvMsg;
