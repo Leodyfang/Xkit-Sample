@@ -89,7 +89,6 @@ void setup() {
   
 //  delay(1000);
   delay(500);
-  sleepNow();
   // Init watchdog timer
 //  watchdogSetup();
 //  watchdogCounter = 0;
