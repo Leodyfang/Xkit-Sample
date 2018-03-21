@@ -95,19 +95,28 @@ void setup() {
     setup_watchdog(9);
 // 0=16ms, 1=32ms,2=64ms,3=128ms,4=250ms,5=500ms
 // 6=1 sec,7=2 sec, 8=4 sec, 9= 8sec 
+//  ``power_all_disable ();
+  pinMode(LED_BUILTIN, OUTPUT);//save  "power" of LED
 }
 void sleepNow()         // here we put the arduino to sleep
 {
+    ACSR |=_BV(ACD);//Turn off ADC (analog to digital conversion)
+    ADCSRA=0;//OFF ADC
     set_sleep_mode(SLEEP_MODE_PWR_DOWN);   // sleep mode is set here
     sleep_enable();          // enables the sleep bit in the mcucr register
                              // so sleep is possible. just a safety pin
-    sleep_mode();            // here the device is actually put to sleep!!
+// turn off brown-out enable in software
+    MCUCR = bit (BODS) |ƒ bit (BODSE);  // turn on brown-out enable select
+    MCUCR = bit (BODS);        // this must be done within 4 clock cycles of above           
+    sleep_cpu ();                     
+//    sleep_mode();            // here the device is actually put to sleep!!
                              // THE PROGRAM CONTINUES FROM HERE AFTER WAKING UP
 }
 
 void loop() {
   timer.run();
 //  wdt_reset();
+  digitalWrite(LED_BUILTIN, LOW);    // turn the LED off by making the voltage LOW
   Serial.println(data);
   if(data >= 75){   //8*75 s == 600s == 10 mins
     data = 0;
