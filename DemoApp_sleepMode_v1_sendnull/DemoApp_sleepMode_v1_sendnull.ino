@@ -22,7 +22,8 @@
 #include <SimpleTimer.h>
 #include <avr/wdt.h>
 #include <avr/sleep.h>
-
+#include <avr/interrupt.h>
+int send_flag = 0;
 int flag = 0;
 volatile byte data=0;  //data is the counter of  WDT rounds
 Isigfox *Isigfox = new WISOL();
@@ -58,11 +59,6 @@ void setup() {
   Wire.setClock(100000);
 
   Serial.begin(9600);
-
-  // Init watchdog timer
-  watchdogSetup();
-  watchdogCounter = 0;
-  
   // WISOL test
   flagInit = -1;
   while (flagInit == -1) {
@@ -76,11 +72,10 @@ void setup() {
   }
   
   // Init sensors on Thinxtra Module
-  tSensors->initSensors();
+  tSensors->initSensors();   //
   tSensors->setReed(reedIR);
   buttonCounter = 0;
   tSensors->setButton(buttonIR);
-
   // Init LED
   stateLED = 0;
   ledCounter = 0;
@@ -89,9 +84,19 @@ void setup() {
   // Init timer to send a Sigfox message every 10 minutes
   unsigned long sendInterval = 600000;
   timer.setInterval(sendInterval, timeIR);
-  pinMode(LED_BUILTIN, OUTPUT);//save  "power" of LED
+
   Serial.println("RESET"); // Make a clean start
-  delay(1000);
+  
+//  delay(1000);
+  delay(500);
+  // Init watchdog timer
+//  watchdogSetup();
+//  watchdogCounter = 0;
+    setup_watchdog(9);
+// 0=16ms, 1=32ms,2=64ms,3=128ms,4=250ms,5=500ms
+// 6=1 sec,7=2 sec, 8=4 sec, 9= 8sec 
+//  ``power_all_disable ();
+  pinMode(LED_BUILTIN, OUTPUT);//save  "power" of LED
 }
 void sleepNow()         // here we put the arduino to sleep
 {
@@ -107,13 +112,16 @@ void sleepNow()         // here we put the arduino to sleep
     sleep_mode();            // here the device is actually put to sleep!!
                              // THE PROGRAM CONTINUES FROM HERE AFTER WAKING UP
 }
+
 void loop() {
+  send_flag = 0;
   timer.run();
-  wdt_reset(); 
+//  wdt_reset();
   digitalWrite(LED_BUILTIN, LOW);    // turn the LED off by making the voltage LOW
-  if(watchdogCounter >= 75){   //8*75 s == 600s == 10 mins
-    watchdogCounter = 0;
-    Serial.println("timeup");   
+  Serial.println(data);
+  if(data >= 75){   //8*75 s == 600s == 10 mins
+    data = 0;
+    Serial.println("time");   
     Send_Sensors();
     sleepNow();
   }
@@ -168,19 +176,28 @@ void Send_Sensors(){
 
   Send_Pload(buf_str, payloadSize);
 //  free(buf_str);
-  flag = 0;
-  watchdogCounter = 0;
+  if(send_flag == 1){
+    flag = 0;
+    data = 0;//reset the counter so that it can send after another 10 mins
+    // If want to get blocking downlink message, use the folling block instead
+  }
 }
 
 void reedIR(){
   flag = 1;
   Serial.println("Reed");
-  timer.setTimeout(50, Send_Sensors); // send a Sigfox message after get out IRS
+  timer.setTimeout(50, Send_Sensors); // send a Sigfox message after get out IRS 
 }
 
 void buttonIR(){
+  int test2 = digitalRead(buttonPin);
   if (buttonCounter==0) {
+    if (test2 == 1){
+    Serial.println("B1"); 
+  }else{
+    Serial.println("B0");
     timer.setTimeout(500, checkLongPress); // check long click after 0.5s
+  }
   }
 }
 
@@ -189,12 +206,12 @@ void checkLongPress() {
   if ((buttonCounter < 4)) {
     if (digitalRead(buttonPin) == 1) {
       Serial.println("Short Press");
-//      Send_Sensors();
+      Send_Sensors();
       buttonCounter = 0;
     } else {
       timer.setTimeout(500, checkLongPress); // check long click after 0.5s
     }
-  } else {  //SET PUBLIC KEY AND SET PRIVATE KEY
+  } else {
     Serial.println("Long Press");
     BlinkLED();
     pinMode(redLED, OUTPUT);
@@ -261,11 +278,10 @@ void Send_Pload(uint8_t *sendData, const uint8_t len){
   for (int i = 0; i < RecvMsg->len; i++) {
     Serial.print(RecvMsg->inData[i]);
   }
-  Serial.println("");
+  Serial.println("sendfinish!");
+  send_flag = 1;
   free(RecvMsg);
 
-
-  // If want to get blocking downlink message, use the folling block instead
   /*
   recvMsg *RecvMsg;
 
@@ -302,45 +318,45 @@ void GetDeviceID(){
 }
 
 
-void watchdogSetup(void) { // Enable watchdog timer
-  cli();  // disable all interrupts
-  wdt_reset(); // reset the WDT timer
-  /*
-   WDTCSR configuration:
-   WDIE = 1: Interrupt Enable
-   WDE = 1 :Reset Enable
-   WDP3 = 1 :For 8000ms Time-out
-   WDP2 = 1 :For 8000ms Time-out
-   WDP1 = 1 :For 8000ms Time-out
-   WDP0 = 1 :For 8000ms Time-out
-  */
-  // Enter Watchdog Configuration mode:
-  // IF | IE | P3 | CE | E | P2 | P1 | P0
-  WDTCSR |= B00011000;
-  WDTCSR = B01110001;
-//  WDTCSR |= (1<<WDCE) | (1<<WDE);
-//  // Set Watchdog settings:
-//   WDTCSR = (1<<WDIE) | (1<<WDE) | (1<<WDP3) | (1<<WDP2) | (1<<WDP1) | (1<<WDP0);
-  sei();
-}
-
-
-void watchdog_disable() { // Disable watchdog timer
-  cli();  // disable all interrupts
-  WDTCSR |= B00011000;
-  WDTCSR = B00110001;
-  sei();
-}
-
-
-ISR(WDT_vect) // Watchdog timer interrupt.
-{
-// Include your code here - be careful not to use functions they may cause the interrupt to hang and
-// prevent a reset.
-  Serial.print("Counter: ");
-  Serial.println(watchdogCounter);
-  watchdogCounter++;
-//  if (watchdogCounter == 20) { // reset CPU after about 180 s
+//void watchdogSetup(void) { // Enable watchdog timer
+//  cli();  // disable all interrupts
+//  wdt_reset(); // reset the WDT timer
+//  /*
+//   WDTCSR configuration:
+//   WDIE = 1: Interrupt Enable
+//   WDE = 1 :Reset Enable
+//   WDP3 = 1 :For 8000ms Time-out
+//   WDP2 = 1 :For 8000ms Time-out
+//   WDP1 = 1 :For 8000ms Time-out
+//   WDP0 = 1 :For 8000ms Time-out
+//  */
+//  // Enter Watchdog Configuration mode:
+//  // IF | IE | P3 | CE | E | P2 | P1 | P0
+//  WDTCSR |= B00011000;
+//  WDTCSR = B01110001;
+////  WDTCSR |= (1<<WDCE) | (1<<WDE);
+////  // Set Watchdog settings:
+////   WDTCSR = (1<<WDIE) | (1<<WDE) | (1<<WDP3) | (1<<WDP2) | (1<<WDP1) | (1<<WDP0);
+//  sei();
+//}
+//
+//
+//void watchdog_disable() { // Disable watchdog timer
+//  cli();  // disable all interrupts
+//  WDTCSR |= B00011000;
+//  WDTCSR = B00110001;
+//  sei();
+//}
+//
+//
+//ISR(WDT_vect) // Watchdog timer interrupt.
+//{
+//// Include your code here - be careful not to use functions they may cause the interrupt to hang and
+//// prevent a reset.
+//  Serial.print("WD reset: ");
+//  Serial.println(watchdogCounter);
+//  watchdogCounter++;
+//  if (watchdogCounter == 3) { // reset CPU after about 180 s
 //      // Reset the CPU next time
 //      // Enable WD reset
 //      cli();  // disable all interrupts
@@ -348,7 +364,30 @@ ISR(WDT_vect) // Watchdog timer interrupt.
 //      WDTCSR = B01111001;
 //      sei();
 //      wdt_reset();
-//  } else if (watchdogCounter < 8) {
-//    wdt_reset();
+////  } else if (watchdogCounter < 8) {
+////    wdt_reset();
 //  }
+//}
+void setup_watchdog(int ii) {
+
+  byte bb;
+
+  if (ii > 9 ) ii=9;
+  bb=ii & 7;
+  if (ii > 7) bb|= (1<<5);
+  bb|= (1<<WDCE);
+
+  MCUSR &= ~(1<<WDRF);
+  // start timed sequence
+  WDTCSR |= (1<<WDCE) | (1<<WDE);
+  // set new watchdog timeout value
+  WDTCSR = bb;
+  WDTCSR |= _BV(WDIE);
+}
+//WDT interrupt
+ISR(WDT_vect) {
+
+  ++data;
+// wdt_reset();
+
 }
